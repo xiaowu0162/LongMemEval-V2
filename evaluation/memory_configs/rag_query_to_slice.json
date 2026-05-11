@@ -1,0 +1,36 @@
+{
+  "memory_type": "rag",
+  "memory_params": {
+    "trajectory_pool_root": null,
+    "controller_params": {
+      "model": "Qwen/Qwen3.5-9B",
+      "base_url": "http://localhost:8023/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "api_key_file": null,
+      "max_completion_tokens": 8192,
+      "timeout_seconds": 600.0,
+      "max_retries": 3,
+      "disable_thinking": false,
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20
+    },
+    "embedding_params": {
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "base_url": "http://localhost:8114/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "api_key_file": null,
+      "max_input_tokens": 4096,
+      "query_instruction": "Given a question about past agent trajectories, retrieve relevant memory entries that help answer it."
+    },
+    "index_params": {
+      "raw_state_slice_radius": 1
+    },
+    "retrieval_params": {
+      "enable_notes": false,
+      "raw_state_search_top_k": 6,
+      "note_search_top_k_per_type": 3
+    }
+  }
+}
+

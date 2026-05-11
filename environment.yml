@@ -1,0 +1,11 @@
+name: lme-v2-release
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -r requirements-torch.txt
+      - -r requirements.txt
+variables:
+  PYTHONNOUSERSITE: "1"

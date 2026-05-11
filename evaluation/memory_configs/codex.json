@@ -1,0 +1,18 @@
+{
+  "memory_type": "codex",
+  "memory_params": {
+    "questions_path": "SET_BY_SCRIPT",
+    "evidence_mode": "both",
+    "trajectory_pool_root": null,
+    "codex_params": {
+      "binary": "SET_CODEX_BINARY",
+      "model": "gpt-5.4-mini",
+      "reasoning_effort": "xhigh",
+      "timeout_seconds": 1800.0,
+      "max_retries": 3,
+      "extra_config": [],
+      "extra_args": []
+    }
+  }
+}
+

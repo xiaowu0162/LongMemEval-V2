@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "longmemeval-v2-artifact"
+version = "0.1.0"
+description = "Public evaluation artifact for LongMemEval-V2."
+requires-python = ">=3.11"
+dependencies = [
+  "huggingface_hub",
+  "numpy",
+  "openai",
+  "pillow",
+  "tqdm",
+  "transformers",
+]
+
+[project.optional-dependencies]
+torch = [
+  "torch",
+  "torchvision",
+]
+
+[tool.setuptools]
+packages = ["data", "evaluation", "memory_modules"]
+
+[tool.setuptools.package-data]
+memory_modules = ["assets/agentrunbook_c/INSTRUCTION.md", "assets/agentrunbook_c/scripts/*.py"]

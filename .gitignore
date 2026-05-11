@@ -209,6 +209,13 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# LongMemEval-V2 local artifacts
+data/longmemeval-v2/
+runs/
+leaderboard/submissions/
+/run_small_agentrunbook_c.sh
+/run_small_agentrunbook_r.sh
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
