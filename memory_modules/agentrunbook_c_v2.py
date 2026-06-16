@@ -128,7 +128,7 @@ class AgentRunbookCV2(AgentRunbookC):
                 api_key_env=self.sdk_api_key_env,
                 tool_timeout_seconds=self.tool_timeout_seconds,
                 max_tool_output_chars=self.max_tool_output_chars,
-                agent_name="AgentRunbookCV2",
+                agent_name="AgentRunbookCOpenAISDK",
                 responses_transport=self.responses_transport,
                 api_connect_timeout_seconds=self.api_connect_timeout_seconds,
                 api_read_timeout_seconds=self.api_read_timeout_seconds,
@@ -170,7 +170,7 @@ class AgentRunbookCV2(AgentRunbookC):
 
     def _runner_summary_fields(self) -> dict[str, Any]:
         return {
-            "runner": "oai_agents_sdk",
+            "runner": "openai_agents_sdk",
             "model": self.sdk_model,
             "reasoning_effort": self.sdk_reasoning_effort,
             "max_turns": self.sdk_max_turns,
@@ -252,7 +252,7 @@ class AgentRunbookCV2(AgentRunbookC):
 
         duration_seconds = time.time() - started_at_ts
         stdout_payload = {
-            "runner": "oai_agents_sdk",
+            "runner": "openai_agents_sdk",
             "model": self.sdk_model,
             "reasoning_effort": self.sdk_reasoning_effort,
             "final_output": run_result.final_output,
@@ -267,7 +267,7 @@ class AgentRunbookCV2(AgentRunbookC):
         stderr_path.write_text(run_result.error_traceback, encoding="utf-8")
 
         if run_result.error_detail is not None:
-            status_after = "timeout" if run_result.timed_out else "oai_agents_sdk_error"
+            status_after = "timeout" if run_result.timed_out else "openai_sdk_error"
             status_detail = run_result.error_detail
         else:
             status_after = None

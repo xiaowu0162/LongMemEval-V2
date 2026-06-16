@@ -11,6 +11,16 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from agents import (
+    ApplyPatchTool,
+    ShellCallOutcome,
+    ShellCommandOutput,
+    ShellCommandRequest,
+    ShellResult,
+    ShellTool,
+    apply_diff,
+)
+from agents.editor import ApplyPatchOperation, ApplyPatchResult
 from openai import AsyncOpenAI
 
 
@@ -19,7 +29,7 @@ TRUNCATION_HINT = (
     "Rerun with a narrower command: sed range, scoped rg pattern, "
     "inspect_trajectory.py --state/--span/--match."
 )
-OAI_AGENTS_SYSTEM_INSTRUCTIONS = '''
+CODEX_SYSTEM_INSTRUCTIONS = '''
 You are a file system agent. You and the user share the same workspace and collaborate to achieve the user's goals.
 
 # Personality
@@ -54,6 +64,7 @@ As an expert file system agent, your primary focus is executing commands and hel
 ## Autonomy and persistence
 Persist until the task is fully handled end-to-end within the current turn whenever feasible: do not stop at analysis or partial fixes; carry changes through implementation, verification, and a clear explanation of outcomes unless the user explicitly pauses or redirects you.
 '''
+OAI_AGENTS_SYSTEM_INSTRUCTIONS = CODEX_SYSTEM_INSTRUCTIONS
 
 
 def require(condition: bool, message: str) -> None:
@@ -61,12 +72,12 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-class OaiAgentsSDKOuterTimeoutError(TimeoutError):
+class OpenAISDKOuterTimeoutError(TimeoutError):
     pass
 
 
 @dataclass(frozen=True)
-class OaiAgentsSDKRunnerConfig:
+class OpenAISDKRunnerConfig:
     model: str
     reasoning_effort: str
     timeout_seconds: float
@@ -74,7 +85,7 @@ class OaiAgentsSDKRunnerConfig:
     api_key_env: str
     tool_timeout_seconds: float
     max_tool_output_chars: int
-    agent_name: str = "OaiAgentsSDKRunner"
+    agent_name: str = "OpenAISDKRunner"
     responses_transport: str = "websocket"
     api_connect_timeout_seconds: float = 15.0
     api_read_timeout_seconds: float = 300.0
@@ -84,7 +95,7 @@ class OaiAgentsSDKRunnerConfig:
 
 
 @dataclass
-class OaiAgentsSDKRunResult:
+class OpenAISDKRunResult:
     final_output: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     usage: dict[str, Any] | None = None
@@ -97,40 +108,26 @@ def load_agents_sdk() -> dict[str, Any]:
     try:
         from agents import (
             Agent,
-            ApplyPatchTool,
             ModelSettings,
             OpenAIProvider,
             RunConfig,
             Runner,
-            ShellCallOutcome,
-            ShellCommandOutput,
-            ShellResult,
-            ShellTool,
             ToolExecutionConfig,
-            apply_diff,
         )
-        from agents.editor import ApplyPatchResult
         from openai.types.shared import Reasoning
     except ImportError as exc:
         raise RuntimeError(
-            "oai_agents_sdk requires the openai-agents package. "
+            "openai sdk runner requires the openai-agents package. "
             "Install dependencies from requirements.txt or pyproject.toml."
         ) from exc
     return {
         "Agent": Agent,
-        "ApplyPatchResult": ApplyPatchResult,
-        "ApplyPatchTool": ApplyPatchTool,
         "ModelSettings": ModelSettings,
         "OpenAIProvider": OpenAIProvider,
         "Reasoning": Reasoning,
         "RunConfig": RunConfig,
         "Runner": Runner,
-        "ShellCallOutcome": ShellCallOutcome,
-        "ShellCommandOutput": ShellCommandOutput,
-        "ShellResult": ShellResult,
-        "ShellTool": ShellTool,
         "ToolExecutionConfig": ToolExecutionConfig,
-        "apply_diff": apply_diff,
     }
 
 
@@ -163,7 +160,10 @@ def ensure_non_negative_int(value: object, *, field_name: str) -> int:
     return int(value)
 
 
-def build_agent_input(*, user_prompt: str) -> str:
+def build_agent_input(
+    *,
+    user_prompt: str,
+) -> str:
     return ensure_string(user_prompt, field_name="user_prompt")
 
 
@@ -174,11 +174,9 @@ def make_sandbox_tools(
     tool_timeout_seconds: float,
     max_tool_output_chars: int,
 ) -> list[Any]:
-    sdk = load_agents_sdk()
     return [
-        sdk["ShellTool"](
+        ShellTool(
             executor=ShellExecutor(
-                sdk=sdk,
                 sandbox_dir=sandbox_dir,
                 tool_calls=tool_calls,
                 tool_timeout_seconds=tool_timeout_seconds,
@@ -187,29 +185,27 @@ def make_sandbox_tools(
             environment={"type": "local"},
             needs_approval=False,
         ),
-        sdk["ApplyPatchTool"](
-            editor=WorkspaceEditor(sdk=sdk, sandbox_dir=sandbox_dir, tool_calls=tool_calls),
+        ApplyPatchTool(
+            editor=WorkspaceEditor(sandbox_dir=sandbox_dir, tool_calls=tool_calls),
             needs_approval=False,
         ),
     ]
 
 
 class ShellExecutor:
-    """Executes shell commands inside the prepared benchmark sandbox."""
+    """Executes shell commands; approvals are disabled on ShellTool."""
 
     def __init__(
         self,
         *,
-        sdk: dict[str, Any],
         sandbox_dir: Path,
         tool_calls: list[dict[str, Any]],
         tool_timeout_seconds: float,
         max_tool_output_chars: int,
     ) -> None:
-        self.sdk = sdk
         self.cwd = sandbox_dir.resolve()
         self.env = os.environ.copy()
-        shim_dir = self.cwd / ".oai_agents_sdk_bin"
+        shim_dir = self.cwd / ".openai_sdk_runner_bin"
         shim_dir.mkdir(parents=True, exist_ok=True)
         python_bin = Path(sys.executable).resolve()
         for name in ("python", "python3"):
@@ -227,10 +223,10 @@ class ShellExecutor:
         self.tool_timeout_seconds = tool_timeout_seconds
         self.max_tool_output_chars = max_tool_output_chars
 
-    async def __call__(self, request: Any) -> Any:
+    async def __call__(self, request: ShellCommandRequest) -> ShellResult:
         action = request.data.action
         timeout = self._timeout(action.timeout_ms)
-        outputs: list[Any] = []
+        outputs: list[ShellCommandOutput] = []
 
         for command in action.commands:
             started = time.time()
@@ -246,8 +242,7 @@ class ShellExecutor:
             timed_out = False
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=timeout,
+                    proc.communicate(), timeout=timeout
                 )
             except asyncio.TimeoutError:
                 timed_out = True
@@ -280,11 +275,11 @@ class ShellExecutor:
                     tool_response=tool_response,
                 )
                 outputs.append(
-                    self.sdk["ShellCommandOutput"](
+                    ShellCommandOutput(
                         command=command,
                         stdout=original_stdout,
                         stderr=original_stderr or f"shell command timed out after {timeout}s",
-                        outcome=self.sdk["ShellCallOutcome"](type="timeout", exit_code=None),
+                        outcome=ShellCallOutcome(type="timeout", exit_code=None),
                         provider_data=tool_response,
                     )
                 )
@@ -324,7 +319,7 @@ class ShellExecutor:
                     if key not in {"stdout", "stderr"}
                 }
                 stderr = "\n".join(
-                    part for part in (stderr, message, json.dumps(metadata, ensure_ascii=True)) if part
+                    part for part in (stderr, message, json.dumps(metadata)) if part
                 )
                 exit_code = 2
             else:
@@ -352,16 +347,16 @@ class ShellExecutor:
                 tool_response=tool_response,
             )
             outputs.append(
-                self.sdk["ShellCommandOutput"](
+                ShellCommandOutput(
                     command=command,
                     stdout=stdout,
                     stderr=stderr,
-                    outcome=self.sdk["ShellCallOutcome"](type="exit", exit_code=exit_code),
+                    outcome=ShellCallOutcome(type="exit", exit_code=exit_code),
                     provider_data=tool_response,
                 )
             )
 
-        return self.sdk["ShellResult"](
+        return ShellResult(
             output=outputs,
             max_output_length=self.max_tool_output_chars,
             provider_data={"working_directory": str(self.cwd)},
@@ -404,37 +399,35 @@ class ShellExecutor:
 class WorkspaceEditor:
     """Applies apply_patch operations inside the prepared benchmark sandbox."""
 
-    def __init__(
-        self,
-        *,
-        sdk: dict[str, Any],
-        sandbox_dir: Path,
-        tool_calls: list[dict[str, Any]],
-    ) -> None:
-        self.sdk = sdk
+    def __init__(self, *, sandbox_dir: Path, tool_calls: list[dict[str, Any]]) -> None:
         self._root = sandbox_dir.resolve()
         self.tool_calls = tool_calls
 
-    def create_file(self, operation: Any) -> Any:
+    def create_file(self, operation: ApplyPatchOperation) -> ApplyPatchResult:
         started = time.time()
         try:
             if operation.diff is None:
                 raise RuntimeError(f"missing diff for create_file: {operation.path}")
             target = self._resolve(operation.path, ensure_parent=True)
-            content = self.sdk["apply_diff"]("", operation.diff, mode="create")
+            content = apply_diff("", operation.diff, mode="create")
             target.write_text(content, encoding="utf-8")
-            return self._result(operation, started, "completed", f"Created {self._relative(target)}")
+            return self._result(
+                operation,
+                started,
+                "completed",
+                f"Created {self._relative(target)}",
+            )
         except Exception as exc:
             self._record(operation, started, "failed", str(exc))
             raise
 
-    def update_file(self, operation: Any) -> Any:
+    def update_file(self, operation: ApplyPatchOperation) -> ApplyPatchResult:
         started = time.time()
         try:
             if operation.diff is None:
                 raise RuntimeError(f"missing diff for update_file: {operation.path}")
             target = self._resolve(operation.path)
-            updated = self.sdk["apply_diff"](target.read_text(encoding="utf-8"), operation.diff)
+            updated = apply_diff(target.read_text(encoding="utf-8"), operation.diff)
             destination = self._resolve(operation.move_to) if operation.move_to else target
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(updated, encoding="utf-8")
@@ -451,12 +444,17 @@ class WorkspaceEditor:
             self._record(operation, started, "failed", str(exc))
             raise
 
-    def delete_file(self, operation: Any) -> Any:
+    def delete_file(self, operation: ApplyPatchOperation) -> ApplyPatchResult:
         started = time.time()
         try:
             target = self._resolve(operation.path)
             target.unlink(missing_ok=True)
-            return self._result(operation, started, "completed", f"Deleted {self._relative(target)}")
+            return self._result(
+                operation,
+                started,
+                "completed",
+                f"Deleted {self._relative(target)}",
+            )
         except Exception as exc:
             self._record(operation, started, "failed", str(exc))
             raise
@@ -478,17 +476,17 @@ class WorkspaceEditor:
 
     def _result(
         self,
-        operation: Any,
+        operation: ApplyPatchOperation,
         started: float,
         status: str,
         output: str,
-    ) -> Any:
+    ) -> ApplyPatchResult:
         self._record(operation, started, status, output)
-        return self.sdk["ApplyPatchResult"](status=status, output=output)
+        return ApplyPatchResult(status=status, output=output)
 
     def _record(
         self,
-        operation: Any,
+        operation: ApplyPatchOperation,
         started: float,
         status: str,
         output: str,
@@ -556,12 +554,12 @@ def summarize_run_usage(result: object) -> dict[str, Any]:
     }
 
 
-class OaiAgentsSDKRunner:
-    def __init__(self, config: OaiAgentsSDKRunnerConfig) -> None:
+class OpenAISDKRunner:
+    def __init__(self, config: OpenAISDKRunnerConfig) -> None:
         self.config = config
         require(
             config.responses_transport == "websocket",
-            "OaiAgentsSDKRunner only supports responses_transport='websocket'",
+            "OpenAISDKRunner only supports responses_transport='websocket'",
         )
         require(
             os.getenv(config.api_key_env),
@@ -574,7 +572,7 @@ class OaiAgentsSDKRunner:
         *,
         sandbox_dir: Path,
         user_prompt: str,
-    ) -> OaiAgentsSDKRunResult:
+    ) -> OpenAISDKRunResult:
         tool_calls: list[dict[str, Any]] = []
         try:
             result = self._run_agent(
@@ -582,13 +580,13 @@ class OaiAgentsSDKRunner:
                 user_prompt=user_prompt,
                 tool_calls=tool_calls,
             )
-            return OaiAgentsSDKRunResult(
+            return OpenAISDKRunResult(
                 final_output=str(getattr(result, "final_output", "")),
                 tool_calls=tool_calls,
                 usage=summarize_run_usage(result),
             )
-        except OaiAgentsSDKOuterTimeoutError as exc:
-            return OaiAgentsSDKRunResult(
+        except OpenAISDKOuterTimeoutError as exc:
+            return OpenAISDKRunResult(
                 tool_calls=tool_calls,
                 error_detail=f"OpenAI Agents SDK run timed out after {self.config.timeout_seconds}s",
                 error_traceback="".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
@@ -596,14 +594,14 @@ class OaiAgentsSDKRunner:
             )
         except (TimeoutError, httpx.TimeoutException) as exc:
             detail = str(exc) or exc.__class__.__name__
-            return OaiAgentsSDKRunResult(
+            return OpenAISDKRunResult(
                 tool_calls=tool_calls,
                 error_detail=f"OpenAI Agents SDK run timed out: {detail}",
                 error_traceback="".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
                 timed_out=True,
             )
         except Exception as exc:
-            return OaiAgentsSDKRunResult(
+            return OpenAISDKRunResult(
                 tool_calls=tool_calls,
                 error_detail=str(exc),
                 error_traceback="".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
@@ -627,7 +625,7 @@ class OaiAgentsSDKRunner:
 
         agent = Agent(
             name=self.config.agent_name,
-            instructions=OAI_AGENTS_SYSTEM_INSTRUCTIONS,
+            instructions=CODEX_SYSTEM_INSTRUCTIONS,
             model=self.config.model,
             model_settings=ModelSettings(
                 reasoning=Reasoning(effort=self.config.reasoning_effort),
@@ -640,12 +638,16 @@ class OaiAgentsSDKRunner:
                 max_tool_output_chars=self.config.max_tool_output_chars,
             ),
         )
-        agent_input = build_agent_input(user_prompt=user_prompt)
+        agent_input = build_agent_input(
+            user_prompt=user_prompt,
+        )
 
         async def run_with_timeout() -> Any:
             api_key = os.getenv(self.config.api_key_env)
             client = AsyncOpenAI(
                 api_key=api_key,
+                # The Agents SDK websocket transport builds the handshake from
+                # client.default_headers, not the OpenAI client's auth_headers.
                 default_headers={"Authorization": f"Bearer {api_key}"},
                 timeout=httpx.Timeout(
                     connect=self.config.api_connect_timeout_seconds,
@@ -686,11 +688,17 @@ class OaiAgentsSDKRunner:
                 await asyncio.wait_for(task, timeout=TIMEOUT_CLEANUP_GRACE_SECONDS)
             except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
                 pass
-            raise OaiAgentsSDKOuterTimeoutError(
+            raise OpenAISDKOuterTimeoutError(
                 f"OpenAI Agents SDK run timed out after {self.config.timeout_seconds}s"
             )
 
         return asyncio.run(run_with_outer_timeout())
+
+
+OaiAgentsSDKOuterTimeoutError = OpenAISDKOuterTimeoutError
+OaiAgentsSDKRunnerConfig = OpenAISDKRunnerConfig
+OaiAgentsSDKRunResult = OpenAISDKRunResult
+OaiAgentsSDKRunner = OpenAISDKRunner
 
 
 def _decode_output(value: bytes | bytearray | str | None) -> str:
