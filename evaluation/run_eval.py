@@ -28,6 +28,12 @@ METHODS = {
     "agentrunbook_c_v2",
 }
 
+OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT = {
+    "low": 200.0,
+    "medium": 800.0,
+    "xhigh": 1200.0,
+}
+
 
 def parse_question_ids(raw_values: list[str] | None) -> list[str] | None:
     if not raw_values:
@@ -43,6 +49,7 @@ def parse_question_ids(raw_values: list[str] | None) -> list[str] | None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run LongMemEval-V2 evaluation.")
+    openai_sdk_timeout_seconds_env = os.getenv("OPENAI_SDK_TIMEOUT_SECONDS")
     parser.add_argument("--data-root", required=True, help="Path to the downloaded LongMemEval-V2 dataset")
     parser.add_argument("--domain", choices=["web", "enterprise"], required=True)
     parser.add_argument("--tier", choices=["small", "medium"], default="small")
@@ -81,7 +88,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-max-retries", type=int, default=int(os.getenv("CODEX_MAX_RETRIES", "3")))
     parser.add_argument("--openai-sdk-model", default=os.getenv("OPENAI_SDK_MODEL", "gpt-5.4-mini"))
     parser.add_argument("--openai-sdk-reasoning-effort", default=os.getenv("OPENAI_SDK_REASONING_EFFORT", "medium"))
-    parser.add_argument("--openai-sdk-timeout-seconds", type=float, default=float(os.getenv("OPENAI_SDK_TIMEOUT_SECONDS", os.getenv("CODEX_TIMEOUT_SECONDS", "1800"))))
+    parser.add_argument(
+        "--openai-sdk-timeout-seconds",
+        type=float,
+        default=float(openai_sdk_timeout_seconds_env) if openai_sdk_timeout_seconds_env else None,
+        help="Override the OpenAI Agents SDK query timeout. Defaults by reasoning effort: low=200, medium=800, xhigh=1200.",
+    )
     parser.add_argument("--openai-sdk-max-retries", type=int, default=int(os.getenv("OPENAI_SDK_MAX_RETRIES", os.getenv("CODEX_MAX_RETRIES", "3"))))
     parser.add_argument("--openai-sdk-api-key-env", default=os.getenv("OPENAI_SDK_API_KEY_ENV", "OPENAI_API_KEY"))
     parser.add_argument("--openai-sdk-max-turns", type=int, default=int(os.getenv("OPENAI_SDK_MAX_TURNS", "30")))
@@ -129,13 +141,20 @@ def openai_sdk_query_params(args: argparse.Namespace) -> dict[str, object]:
     return {
         "model": args.openai_sdk_model,
         "reasoning_effort": args.openai_sdk_reasoning_effort,
-        "timeout_seconds": args.openai_sdk_timeout_seconds,
+        "timeout_seconds": openai_sdk_timeout_seconds(args),
         "max_retries": args.openai_sdk_max_retries,
         "max_turns": args.openai_sdk_max_turns,
         "api_key_env": args.openai_sdk_api_key_env,
         "tool_timeout_seconds": args.openai_sdk_tool_timeout_seconds,
         "max_tool_output_chars": args.openai_sdk_max_tool_output_chars,
     }
+
+
+def openai_sdk_timeout_seconds(args: argparse.Namespace) -> float:
+    if args.openai_sdk_timeout_seconds is not None:
+        return float(args.openai_sdk_timeout_seconds)
+    reasoning_effort = str(args.openai_sdk_reasoning_effort).lower()
+    return OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT.get(reasoning_effort, 1800.0)
 
 
 def build_memory_config(args: argparse.Namespace, data_root: Path) -> dict[str, object]:
