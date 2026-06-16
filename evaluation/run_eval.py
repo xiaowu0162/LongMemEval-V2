@@ -49,7 +49,6 @@ def parse_question_ids(raw_values: list[str] | None) -> list[str] | None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run LongMemEval-V2 evaluation.")
-    openai_sdk_timeout_seconds_env = os.getenv("OPENAI_SDK_TIMEOUT_SECONDS")
     parser.add_argument("--data-root", required=True, help="Path to the downloaded LongMemEval-V2 dataset")
     parser.add_argument("--domain", choices=["web", "enterprise"], required=True)
     parser.add_argument("--tier", choices=["small", "medium"], default="small")
@@ -87,12 +86,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-timeout-seconds", type=float, default=float(os.getenv("CODEX_TIMEOUT_SECONDS", "1800")))
     parser.add_argument("--codex-max-retries", type=int, default=int(os.getenv("CODEX_MAX_RETRIES", "3")))
     parser.add_argument("--openai-sdk-model", default=os.getenv("OPENAI_SDK_MODEL", "gpt-5.4-mini"))
-    parser.add_argument("--openai-sdk-reasoning-effort", default=os.getenv("OPENAI_SDK_REASONING_EFFORT", "medium"))
     parser.add_argument(
-        "--openai-sdk-timeout-seconds",
-        type=float,
-        default=float(openai_sdk_timeout_seconds_env) if openai_sdk_timeout_seconds_env else None,
-        help="Override the OpenAI Agents SDK query timeout. Defaults by reasoning effort: low=200, medium=800, xhigh=1200.",
+        "--openai-sdk-reasoning-effort",
+        choices=tuple(OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT),
+        default=os.getenv("OPENAI_SDK_REASONING_EFFORT", "medium"),
+        help="OpenAI Agents SDK reasoning effort. Query timeout is fixed by tier: low=200, medium=800, xhigh=1200.",
     )
     parser.add_argument("--openai-sdk-max-retries", type=int, default=int(os.getenv("OPENAI_SDK_MAX_RETRIES", os.getenv("CODEX_MAX_RETRIES", "3"))))
     parser.add_argument("--openai-sdk-api-key-env", default=os.getenv("OPENAI_SDK_API_KEY_ENV", "OPENAI_API_KEY"))
@@ -107,7 +105,13 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--prompt-build-max-workers", type=int, default=1)
     parser.add_argument("--shuffle-questions-seed", type=int, default=None)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.openai_sdk_reasoning_effort not in OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT:
+        parser.error(
+            "--openai-sdk-reasoning-effort must be one of "
+            f"{', '.join(OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT)}"
+        )
+    return args
 
 
 def controller_params(args: argparse.Namespace) -> dict[str, object]:
@@ -151,10 +155,8 @@ def openai_sdk_query_params(args: argparse.Namespace) -> dict[str, object]:
 
 
 def openai_sdk_timeout_seconds(args: argparse.Namespace) -> float:
-    if args.openai_sdk_timeout_seconds is not None:
-        return float(args.openai_sdk_timeout_seconds)
     reasoning_effort = str(args.openai_sdk_reasoning_effort).lower()
-    return OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT.get(reasoning_effort, 1800.0)
+    return OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT[reasoning_effort]
 
 
 def build_memory_config(args: argparse.Namespace, data_root: Path) -> dict[str, object]:
