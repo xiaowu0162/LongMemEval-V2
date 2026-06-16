@@ -219,5 +219,6 @@ def load_memory(
 from .no_retrieval import NoRetrievalMemory  # noqa: E402,F401
 from .codex import CodexMemory  # noqa: E402,F401
 from .agentrunbook_c import AgentRunbookC  # noqa: E402,F401
+from .agentrunbook_c_v2 import AgentRunbookCV2  # noqa: E402,F401
 from .agentrunbook_r import AgentRunbookR  # noqa: E402,F401
 from .rag import RagMemory  # noqa: E402,F401

@@ -25,6 +25,7 @@ METHODS = {
     "agentrunbook_r",
     "codex",
     "agentrunbook_c",
+    "agentrunbook_c_v2",
 }
 
 
@@ -78,6 +79,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-reasoning-effort", default=os.getenv("CODEX_REASONING_EFFORT", "xhigh"))
     parser.add_argument("--codex-timeout-seconds", type=float, default=float(os.getenv("CODEX_TIMEOUT_SECONDS", "1800")))
     parser.add_argument("--codex-max-retries", type=int, default=int(os.getenv("CODEX_MAX_RETRIES", "3")))
+    parser.add_argument("--openai-sdk-model", default=os.getenv("OPENAI_SDK_MODEL", "gpt-5.4-mini"))
+    parser.add_argument("--openai-sdk-reasoning-effort", default=os.getenv("OPENAI_SDK_REASONING_EFFORT", "medium"))
+    parser.add_argument("--openai-sdk-timeout-seconds", type=float, default=float(os.getenv("OPENAI_SDK_TIMEOUT_SECONDS", os.getenv("CODEX_TIMEOUT_SECONDS", "1800"))))
+    parser.add_argument("--openai-sdk-max-retries", type=int, default=int(os.getenv("OPENAI_SDK_MAX_RETRIES", os.getenv("CODEX_MAX_RETRIES", "3"))))
+    parser.add_argument("--openai-sdk-api-key-env", default=os.getenv("OPENAI_SDK_API_KEY_ENV", "OPENAI_API_KEY"))
+    parser.add_argument("--openai-sdk-max-turns", type=int, default=int(os.getenv("OPENAI_SDK_MAX_TURNS", "30")))
+    parser.add_argument("--openai-sdk-tool-timeout-seconds", type=float, default=float(os.getenv("OPENAI_SDK_TOOL_TIMEOUT_SECONDS", "30")))
+    parser.add_argument("--openai-sdk-max-tool-output-chars", type=int, default=int(os.getenv("OPENAI_SDK_MAX_TOOL_OUTPUT_CHARS", "1048576")))
 
     parser.add_argument("--evaluator-model", default=os.getenv("EVALUATOR_MODEL", "gpt-5.2"))
     parser.add_argument("--evaluator-api-key-env", default=os.getenv("EVALUATOR_API_KEY_ENV", "OPENAI_API_KEY"))
@@ -113,6 +122,19 @@ def embedding_params(args: argparse.Namespace) -> dict[str, object]:
         "api_key_file": None,
         "max_input_tokens": 4096,
         "query_instruction": "Given a question about past agent trajectories, retrieve relevant memory entries that help answer it.",
+    }
+
+
+def openai_sdk_query_params(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "model": args.openai_sdk_model,
+        "reasoning_effort": args.openai_sdk_reasoning_effort,
+        "timeout_seconds": args.openai_sdk_timeout_seconds,
+        "max_retries": args.openai_sdk_max_retries,
+        "max_turns": args.openai_sdk_max_turns,
+        "api_key_env": args.openai_sdk_api_key_env,
+        "tool_timeout_seconds": args.openai_sdk_tool_timeout_seconds,
+        "max_tool_output_chars": args.openai_sdk_max_tool_output_chars,
     }
 
 
@@ -174,6 +196,16 @@ def build_memory_config(args: argparse.Namespace, data_root: Path) -> dict[str, 
                 "evidence_mode": "both",
                 "trajectory_pool_root": None,
                 "codex_params": codex_params,
+            },
+        }
+    if args.method == "agentrunbook_c_v2":
+        return {
+            "memory_type": "agentrunbook_c_v2",
+            "memory_params": {
+                "questions_path": str((data_root / "questions.jsonl").resolve()),
+                "evidence_mode": "both",
+                "trajectory_pool_root": None,
+                "query_openai_sdk_params": openai_sdk_query_params(args),
             },
         }
     return {

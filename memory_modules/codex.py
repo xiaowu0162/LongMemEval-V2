@@ -343,6 +343,7 @@ def format_state_text(state: dict[str, Any], evidence_mode: str) -> str:
 @register_memory
 class CodexMemory(Memory):
     memory_type = "codex"
+    requires_codex_binary = True
 
     def __init__(self, memory_params: dict[str, object]) -> None:
         super().__init__(memory_params)
@@ -421,10 +422,11 @@ class CodexMemory(Memory):
             if resolved_binary is not None
             else Path(codex_binary_text).expanduser().resolve()
         )
-        require(
-            self.codex_binary.exists(),
-            f"codex Codex binary does not exist: {self.codex_binary}",
-        )
+        if self.requires_codex_binary:
+            require(
+                self.codex_binary.exists(),
+                f"codex Codex binary does not exist: {self.codex_binary}",
+            )
         self.codex_model = codex_model.strip()
         self.codex_reasoning_effort = codex_reasoning_effort.strip()
         self.codex_timeout_seconds = float(codex_timeout_seconds)
