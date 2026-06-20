@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +28,6 @@ from .oai_agents_sdk import (
 @register_memory
 class AgentRunbookCV2(AgentRunbookC):
     memory_type = "agentrunbook_c_v2"
-    requires_codex_binary = False
 
     def __init__(self, memory_params: dict[str, object]) -> None:
         sdk_params_obj = memory_params.get(
@@ -56,7 +56,8 @@ class AgentRunbookCV2(AgentRunbookC):
 
         base_params = dict(memory_params)
         base_params["query_codex_params"] = {
-            "binary": sdk_params.get("binary", "codex"),
+            # Satisfies the inherited CodexMemory initializer; v2 executes the SDK runner instead.
+            "binary": sys.executable,
             "model": model,
             "reasoning_effort": reasoning_effort,
             "timeout_seconds": timeout_seconds,

@@ -58,13 +58,6 @@ First, `trajectories/` is already organized in a fixed way. Because this layout 
 
 Next, you should be aware of what tasks have been done to our knowledge. Luckily I have rendered a summary of each of the existing trajectories in `trajectories/TRAJECTORY_SUMMARY_CONCISE.md` (This one has a quick high-level overview of each trajectory so you can get oriented fast and later you can use `trajectories/TRAJECTORY_SUMMARY_FULL.md` which has the detailed thought/action sequence for shortlist selection and exact verification). 
 
-Important filesystem note:
-
-- `trajectories/` may be a symbolic link. Do not conclude that trajectory evidence is missing just because `rg --files` or `find -type f` returns no trajectory files; those commands may skip symlinked directories.
-- Prefer `python scripts/inspect_trajectory.py ...`, `ls -la trajectories`, and direct reads of `trajectories/TRAJECTORY_SUMMARY_FULL.md`.
-- Side note: avoid using `find` for initial discovery. The sandbox working directory is curated with the needed entry points, so direct paths, summary files, helper scripts, and scoped `rg` searches are usually enough.
-- If `find` is truly needed as a diagnostic, use `find -L trajectories ...` so symlinked trajectory files are visible.
-
 Finally go ahead to prepare the memory context. 
 
 ## Step 1: do a quick triage of the query so that you have an expectation of what to do. 

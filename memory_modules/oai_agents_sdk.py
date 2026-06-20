@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import sys
 import time
 import traceback
@@ -54,6 +55,7 @@ You may challenge the user to raise their technical bar, and you may challenge a
 As an expert file system agent, your primary focus is executing commands and helping the user complete their task in the current environment. You build context by examining the files first without making assumptions or jumping to conclusions.
 - Start with targeted discovery: read the request, inspect compact indexes, summaries, or manifests first, then open only the files and spans needed to verify the evidence.
 - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. However, prefer scoped rg searches, sed ranges, and focused helper script invocations (if any) over broad dumps.
+- Avoid `find` for first-pass discovery. When expected files are not visible, check for symlinked directories and use direct paths or symlink-aware commands such as `rg --files -L` or `find -L` before concluding files are absent.
 
 ## Editing constraints
 
@@ -237,20 +239,13 @@ class ShellExecutor:
                 env=self.env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=(os.name == "posix"),
             )
 
-            timed_out = False
-            try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout
-                )
-            except asyncio.TimeoutError:
-                timed_out = True
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-                stdout_bytes, stderr_bytes = await proc.communicate()
+            timed_out, stdout_bytes, stderr_bytes = await self._communicate_with_timeout(
+                proc,
+                timeout=timeout,
+            )
 
             original_stdout = _decode_output(stdout_bytes)
             original_stderr = _decode_output(stderr_bytes)
@@ -366,6 +361,60 @@ class ShellExecutor:
         if timeout_ms is None:
             return self.tool_timeout_seconds
         return min(self.tool_timeout_seconds, max(timeout_ms / 1000.0, 0.001))
+
+    async def _communicate_with_timeout(
+        self,
+        proc: asyncio.subprocess.Process,
+        *,
+        timeout: float,
+    ) -> tuple[bool, bytes | str | None, bytes | str | None]:
+        communicate_task = asyncio.create_task(proc.communicate())
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                asyncio.shield(communicate_task),
+                timeout=timeout,
+            )
+            return False, stdout_bytes, stderr_bytes
+        except asyncio.TimeoutError:
+            self._terminate_process_group(proc, force=False)
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    asyncio.shield(communicate_task),
+                    timeout=TIMEOUT_CLEANUP_GRACE_SECONDS,
+                )
+                return True, stdout_bytes, stderr_bytes
+            except asyncio.TimeoutError:
+                self._terminate_process_group(proc, force=True)
+                try:
+                    stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                        asyncio.shield(communicate_task),
+                        timeout=TIMEOUT_CLEANUP_GRACE_SECONDS,
+                    )
+                    return True, stdout_bytes, stderr_bytes
+                except asyncio.TimeoutError:
+                    communicate_task.cancel()
+                    try:
+                        await communicate_task
+                    except asyncio.CancelledError:
+                        pass
+                    return True, b"", b"shell command timed out and cleanup did not finish"
+
+    def _terminate_process_group(
+        self,
+        proc: asyncio.subprocess.Process,
+        *,
+        force: bool,
+    ) -> None:
+        try:
+            if os.name == "posix":
+                os.killpg(proc.pid, signal.SIGKILL if force else signal.SIGTERM)
+            elif proc.returncode is None:
+                if force:
+                    proc.kill()
+                else:
+                    proc.terminate()
+        except ProcessLookupError:
+            pass
 
     def _record(
         self,
