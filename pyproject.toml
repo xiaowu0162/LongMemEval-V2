@@ -11,6 +11,7 @@ dependencies = [
   "huggingface_hub",
   "numpy",
   "openai",
+  "openai-agents",
   "pillow",
   "tqdm",
   "transformers",

@@ -25,6 +25,13 @@ METHODS = {
     "agentrunbook_r",
     "codex",
     "agentrunbook_c",
+    "agentrunbook_c_v2",
+}
+
+OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT = {
+    "low": 200.0,
+    "medium": 800.0,
+    "xhigh": 1200.0,
 }
 
 
@@ -78,6 +85,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-reasoning-effort", default=os.getenv("CODEX_REASONING_EFFORT", "xhigh"))
     parser.add_argument("--codex-timeout-seconds", type=float, default=float(os.getenv("CODEX_TIMEOUT_SECONDS", "1800")))
     parser.add_argument("--codex-max-retries", type=int, default=int(os.getenv("CODEX_MAX_RETRIES", "3")))
+    parser.add_argument("--openai-sdk-model", default=os.getenv("OPENAI_SDK_MODEL", "gpt-5.4-mini"))
+    parser.add_argument(
+        "--openai-sdk-reasoning-effort",
+        choices=tuple(OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT),
+        default=os.getenv("OPENAI_SDK_REASONING_EFFORT", "medium"),
+        help="OpenAI Agents SDK reasoning effort. Query timeout is fixed by tier: low=200, medium=800, xhigh=1200.",
+    )
+    parser.add_argument("--openai-sdk-max-retries", type=int, default=int(os.getenv("OPENAI_SDK_MAX_RETRIES", os.getenv("CODEX_MAX_RETRIES", "3"))))
+    parser.add_argument("--openai-sdk-api-key-env", default=os.getenv("OPENAI_SDK_API_KEY_ENV", "OPENAI_API_KEY"))
+    parser.add_argument("--openai-sdk-max-turns", type=int, default=int(os.getenv("OPENAI_SDK_MAX_TURNS", "30")))
+    parser.add_argument("--openai-sdk-tool-timeout-seconds", type=float, default=float(os.getenv("OPENAI_SDK_TOOL_TIMEOUT_SECONDS", "30")))
+    parser.add_argument("--openai-sdk-max-tool-output-chars", type=int, default=int(os.getenv("OPENAI_SDK_MAX_TOOL_OUTPUT_CHARS", "1048576")))
 
     parser.add_argument("--evaluator-model", default=os.getenv("EVALUATOR_MODEL", "gpt-5.2"))
     parser.add_argument("--evaluator-api-key-env", default=os.getenv("EVALUATOR_API_KEY_ENV", "OPENAI_API_KEY"))
@@ -86,7 +105,13 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--prompt-build-max-workers", type=int, default=1)
     parser.add_argument("--shuffle-questions-seed", type=int, default=None)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.openai_sdk_reasoning_effort not in OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT:
+        parser.error(
+            "--openai-sdk-reasoning-effort must be one of "
+            f"{', '.join(OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT)}"
+        )
+    return args
 
 
 def controller_params(args: argparse.Namespace) -> dict[str, object]:
@@ -114,6 +139,24 @@ def embedding_params(args: argparse.Namespace) -> dict[str, object]:
         "max_input_tokens": 4096,
         "query_instruction": "Given a question about past agent trajectories, retrieve relevant memory entries that help answer it.",
     }
+
+
+def openai_sdk_query_params(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "model": args.openai_sdk_model,
+        "reasoning_effort": args.openai_sdk_reasoning_effort,
+        "timeout_seconds": openai_sdk_timeout_seconds(args),
+        "max_retries": args.openai_sdk_max_retries,
+        "max_turns": args.openai_sdk_max_turns,
+        "api_key_env": args.openai_sdk_api_key_env,
+        "tool_timeout_seconds": args.openai_sdk_tool_timeout_seconds,
+        "max_tool_output_chars": args.openai_sdk_max_tool_output_chars,
+    }
+
+
+def openai_sdk_timeout_seconds(args: argparse.Namespace) -> float:
+    reasoning_effort = str(args.openai_sdk_reasoning_effort).lower()
+    return OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT[reasoning_effort]
 
 
 def build_memory_config(args: argparse.Namespace, data_root: Path) -> dict[str, object]:
@@ -174,6 +217,16 @@ def build_memory_config(args: argparse.Namespace, data_root: Path) -> dict[str, 
                 "evidence_mode": "both",
                 "trajectory_pool_root": None,
                 "codex_params": codex_params,
+            },
+        }
+    if args.method == "agentrunbook_c_v2":
+        return {
+            "memory_type": "agentrunbook_c_v2",
+            "memory_params": {
+                "questions_path": str((data_root / "questions.jsonl").resolve()),
+                "evidence_mode": "both",
+                "trajectory_pool_root": None,
+                "query_openai_sdk_params": openai_sdk_query_params(args),
             },
         }
     return {
