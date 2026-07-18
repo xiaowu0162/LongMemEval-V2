@@ -125,6 +125,9 @@ class LiansMemory(Memory):
     def _save_backend(self, output_dir: Path) -> None:
         self.close()
         shutil.copy2(self.db_path, output_dir / "lians.db")
+        (output_dir / "state_offset.txt").write_text(
+            f"{self._next_state_offset}\n", encoding="utf-8"
+        )
         portable_config = self.memory_config
         portable_config["memory_params"]["workspace_dir"] = str((output_dir / "workspace").resolve())
         (output_dir / "memory_config.json").write_text(
@@ -138,6 +141,10 @@ class LiansMemory(Memory):
         self.close()
         if saved_db.resolve() != self.db_path.resolve():
             shutil.copy2(saved_db, self.db_path)
+        offset_path = input_dir / "state_offset.txt"
+        require(offset_path.exists(), f"Missing saved Lians state offset: {offset_path}")
+        self._next_state_offset = int(offset_path.read_text(encoding="utf-8").strip())
+        require(self._next_state_offset >= 0, "saved Lians state offset must be non-negative")
         self._client = self._build_client()
 
     def close(self) -> None:
