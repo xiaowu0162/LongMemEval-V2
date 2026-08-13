@@ -1,0 +1,8 @@
+{
+  "memory_type": "lians",
+  "memory_params": {
+    "agent_id": "longmemeval-v2",
+    "top_k": 8,
+    "embedding_provider": "sentence-transformers"
+  }
+}

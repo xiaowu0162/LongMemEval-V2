@@ -228,3 +228,4 @@ from .agentrunbook_c import AgentRunbookC  # noqa: E402,F401
 from .agentrunbook_c_v2 import AgentRunbookCV2  # noqa: E402,F401
 from .agentrunbook_r import AgentRunbookR  # noqa: E402,F401
 from .rag import RagMemory  # noqa: E402,F401
+from .lians import LiansMemory  # noqa: E402,F401

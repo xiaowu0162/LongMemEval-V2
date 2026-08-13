@@ -237,6 +237,19 @@ Then pass it to `evaluation/harness.py` with `--memory-config-path`. To expose
 the method through `evaluation/run_eval.py` and the shell wrappers, add the
 method name and config construction there as well.
 
+The optional Lians backend uses a persistent local SQLite store and requires:
+
+```bash
+pip install 'lians-sdk[local]'
+python evaluation/harness.py \
+  --memory-config-path evaluation/memory_configs/lians.json \
+  # add the dataset and reader arguments described above
+```
+
+LongMemEval trajectory order is represented with deterministic synthetic event
+times because the released trajectories do not include wall-clock timestamps.
+These values preserve sequence and must not be interpreted as observed dates.
+
 ## Submitting to Leaderboard
 
 Leaderboard entries measure how much a memory system improves the released

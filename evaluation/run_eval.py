@@ -26,6 +26,7 @@ METHODS = {
     "codex",
     "agentrunbook_c",
     "agentrunbook_c_v2",
+    "lians",
 }
 
 OPENAI_SDK_TIMEOUT_SECONDS_BY_REASONING_EFFORT = {
@@ -187,6 +188,15 @@ def openai_sdk_timeout_seconds(args: argparse.Namespace) -> float:
 def build_memory_config(args: argparse.Namespace, data_root: Path) -> dict[str, object]:
     if args.method == "no_retrieval":
         return {"memory_type": "no_retrieval", "memory_params": {}}
+    if args.method == "lians":
+        return {
+            "memory_type": "lians",
+            "memory_params": {
+                "agent_id": "longmemeval-v2",
+                "top_k": 8,
+                "embedding_provider": "sentence-transformers",
+            },
+        }
     if args.method in {"rag_query_to_slice", "rag_query_to_slice_notes"}:
         return {
             "memory_type": "rag",

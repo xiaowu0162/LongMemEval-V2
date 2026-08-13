@@ -276,6 +276,7 @@ def inject_runtime_memory_params(
         "codex",
         "agentrunbook_c",
         "agentrunbook_c_v2",
+        "lians",
     }:
         return runtime_config
 
