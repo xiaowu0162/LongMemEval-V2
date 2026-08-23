@@ -77,7 +77,7 @@ DOMAIN_SYSTEM_PROMPTS = {
         "If you do not know the answer, output exactly \\boxed{UNKNOWN}. "
         "Do not guess. Never attempt to guess an answer if you are not sure. "
         "If you believe the question's construction/premise is wrong, provide an "
-        "explanation in \boxed{} explaining why the question is flawed."
+        "explanation in \\boxed{} explaining why the question is flawed."
     ),
     "enterprise": (
         "You are an experienced colleague working in a customized ServiceNow "
@@ -85,7 +85,7 @@ DOMAIN_SYSTEM_PROMPTS = {
         "If you do not know the answer, output exactly \\boxed{UNKNOWN}. "
         "Do not guess. Never attempt to guess an answer if you are not sure. "
         "If you believe the question's construction/premise is wrong, provide an "
-        "explanation in \boxed{} explaining why the question is flawed."
+        "explanation in \\boxed{} explaining why the question is flawed."
     ),
 }
 
